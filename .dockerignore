@@ -1,0 +1,8 @@
+.git
+.DS_Store
+node_modules
+**/node_modules
+apps/ptrack-web/dist
+packages/ptrack-components/dist
+apps/ptrack-web/dist
+apps/ptrack-web/node_modules

@@ -1,0 +1,11 @@
+{
+  "name": "ptrack",
+  "private": true,
+  "packageManager": "pnpm@10.10.0",
+  "scripts": {
+    "build": "pnpm run build:components && pnpm run build:web",
+    "build:web": "pnpm --filter ptrack-web build",
+    "build:components": "pnpm --filter @ptrack/components build",
+    "typecheck": "pnpm -r --parallel typecheck"
+  }
+}

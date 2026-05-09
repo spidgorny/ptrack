@@ -1,0 +1,11 @@
+services:
+  ptrack:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["serve"]
+    environment:
+      PTRACK_HTTP_ADDRESS: 0.0.0.0:7777
+      PTRACK_WEB_DIR: /app/web
+    ports:
+      - "7777:7777"
