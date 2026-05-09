@@ -52,6 +52,9 @@ func TestTrackedInvocationReusesSingletonDaemon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait for daemon state: %v", err)
 	}
+	if state.HTTPAddress != "127.0.0.1:7777" {
+		t.Fatalf("expected daemon to bind to 127.0.0.1:7777, got %q", state.HTTPAddress)
+	}
 	if err := daemonctl.Ping(state, 2*time.Second); err != nil {
 		t.Fatalf("ping daemon: %v", err)
 	}

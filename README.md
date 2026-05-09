@@ -88,6 +88,8 @@ Run the standalone React dashboard with Vite:
 ```bash
 pnpm --filter ptrack-web dev
 ```
+In development, Vite proxies `/api/*` and `/internal/*` to `PTRACK_HTTP_ADDRESS` when set, otherwise to the active daemon recorded in `.ptrack/daemon.json`, and finally falls back to `127.0.0.1:7777`.
+
 
 Build the shared component library:
 

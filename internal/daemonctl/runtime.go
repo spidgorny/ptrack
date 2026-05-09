@@ -20,7 +20,6 @@ const (
 	lockFileName    = "daemon.lock"
 	logFileName     = "daemon.log"
 	defaultHTTPAddr = "127.0.0.1:7777"
-	autoHTTPAddr    = "127.0.0.1:0"
 )
 
 type Paths struct {
@@ -201,7 +200,7 @@ func startDaemon(executable string, paths Paths, logger *slog.Logger) error {
 	cmd.Stderr = logFile
 	cmd.Env = append(os.Environ(),
 		"PTRACK_RUNTIME_DIR="+paths.RuntimeDir,
-		"PTRACK_HTTP_ADDRESS="+autoHTTPAddr,
+		"PTRACK_HTTP_ADDRESS="+defaultHTTPAddr,
 	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
@@ -241,25 +240,49 @@ func discoverWorkspaceRoot(startDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var runtimeDirFallback string
+	var packageJSONFallback string
 	for {
-		if hasWorkspaceMarker(current) {
+		if hasRepositoryWorkspaceMarker(current) {
 			return current, nil
+		}
+		if runtimeDirFallback == "" && hasRuntimeDir(current) {
+			runtimeDirFallback = current
+		}
+		if packageJSONFallback == "" && hasPackageJSON(current) {
+			packageJSONFallback = current
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
+			if runtimeDirFallback != "" {
+				return runtimeDirFallback, nil
+			}
+			if packageJSONFallback != "" {
+				return packageJSONFallback, nil
+			}
 			return current, nil
 		}
 		current = parent
 	}
 }
 
-func hasWorkspaceMarker(dir string) bool {
-	for _, name := range []string{runtimeDirName, ".git", "go.mod", "package.json", "pnpm-workspace.yaml"} {
+func hasRepositoryWorkspaceMarker(dir string) bool {
+	for _, name := range []string{".git", "go.mod", "pnpm-workspace.yaml"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 			return true
 		}
 	}
 	return false
+}
+
+func hasRuntimeDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, runtimeDirName))
+	return err == nil
+}
+
+func hasPackageJSON(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "package.json"))
+	return err == nil
 }
 
 func processExists(pid int) bool {
