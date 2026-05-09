@@ -2,6 +2,8 @@
 
 `ptrack` is a process tracker that wraps CLI commands, keeps a single long-lived daemon running per workspace, and exposes tracked process state over HTTP and WebSocket for both a standalone React UI and a reusable React component library.
 
+![Screenshot](screenshot.png)
+
 ## Why this is awesome
 
 `ptrack` is especially useful when your code is running inside Docker and you do not want to guess what happened inside the container.
