@@ -36,6 +36,13 @@ const preStyle: CSSProperties = {
   whiteSpace: 'pre-wrap',
 };
 
+const terminalStyle: CSSProperties = {
+  ...preStyle,
+  background: '#000000',
+  color: '#f8fafc',
+  lineHeight: 1.45,
+};
+
 const labelStyle: CSSProperties = {
   color: '#9fb4d0',
   fontSize: '0.8rem',
@@ -56,7 +63,23 @@ const EmptyState = () => (
   </div>
 );
 
-const logLine = (entry: LogEntry) => `[${entry.seq}] ${entry.timestamp} ${entry.stream}\n${entry.text}`;
+const logStreamColor = (stream: LogEntry['stream']) => {
+  switch (stream) {
+    case 'stderr':
+      return '#f87171';
+    case 'stdout':
+    case 'pty':
+    default:
+      return '#f8fafc';
+  }
+};
+
+const renderLogEntry = (entry: LogEntry) => (
+  <div key={entry.seq} style={{ color: logStreamColor(entry.stream) }}>
+    <span style={{ color: '#94a3b8' }}>{`[${entry.seq}] ${entry.timestamp} ${entry.stream}`}</span>
+    {`\n${entry.text}`}
+  </div>
+);
 
 const sourceSummary = (detail: ProcessDetailModel) => {
   const containerId = detail.source.docker?.container_id;
@@ -151,6 +174,36 @@ export const ProcessDetail = ({
             <pre style={{ ...preStyle, marginTop: '0.75rem', maxHeight: '10rem' }}>{formatCommand(detail.argv)}</pre>
           </section>
 
+          <section style={{ ...panelStyle, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+              <div>
+                <div style={labelStyle}>Buffered logs</div>
+                <p style={{ margin: '0.35rem 0 0', color: '#9fb4d0' }}>
+                  Showing the latest {logs.length} retained entries. WebSocket append events are merged by sequence number.
+                </p>
+              </div>
+              {onRetry ? (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  style={{
+                    borderRadius: 999,
+                    border: '1px solid rgba(99, 179, 237, 0.35)',
+                    background: 'rgba(37, 99, 235, 0.2)',
+                    color: '#ffffff',
+                    padding: '0.45rem 0.8rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Refresh snapshot
+                </button>
+              ) : null}
+            </div>
+            <div role="log" aria-live="polite" style={{ ...terminalStyle, marginTop: '0.9rem', flex: 1 }}>
+              {logs.length > 0 ? logs.map(renderLogEntry) : 'No log data has been buffered yet.'}
+            </div>
+          </section>
+
           <section style={panelStyle}>
             <div>
               <div style={labelStyle}>Child processes</div>
@@ -195,36 +248,6 @@ export const ProcessDetail = ({
                 </table>
               </div>
             )}
-          </section>
-
-          <section style={{ ...panelStyle, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
-              <div>
-                <div style={labelStyle}>Buffered logs</div>
-                <p style={{ margin: '0.35rem 0 0', color: '#9fb4d0' }}>
-                  Showing the latest {logs.length} retained entries. WebSocket append events are merged by sequence number.
-                </p>
-              </div>
-              {onRetry ? (
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  style={{
-                    borderRadius: 999,
-                    border: '1px solid rgba(99, 179, 237, 0.35)',
-                    background: 'rgba(37, 99, 235, 0.2)',
-                    color: '#ffffff',
-                    padding: '0.45rem 0.8rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Refresh snapshot
-                </button>
-              ) : null}
-            </div>
-            <pre style={{ ...preStyle, marginTop: '0.9rem', flex: 1 }}>
-              {logs.length > 0 ? logs.map(logLine).join('\n') : 'No log data has been buffered yet.'}
-            </pre>
           </section>
         </>
       ) : null}

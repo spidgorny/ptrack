@@ -85,7 +85,10 @@ export const useProcessDetail = (
             process_id: processId,
             logs_after: lastSeq,
           });
-          socket.addEventListener('open', () => setConnectionState('open'));
+          socket.addEventListener('open', () => {
+            setConnectionState('open');
+            setError((current) => (current?.message === 'Process detail socket failed.' ? undefined : current));
+          });
           socket.addEventListener('close', () => setConnectionState('closed'));
           socket.addEventListener('error', () => {
             setConnectionState('error');

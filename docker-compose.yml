@@ -9,3 +9,25 @@ services:
       PTRACK_WEB_DIR: /app/web
     ports:
       - "7777:7777"
+  ptrack-web-dev:
+    image: node:20-alpine
+    working_dir: /workspace
+    depends_on:
+      - ptrack
+    environment:
+      CI: "true"
+      PTRACK_HTTP_ADDRESS: http://ptrack:7777
+    command:
+      - sh
+      - -lc
+      - corepack enable && pnpm install --frozen-lockfile --config.confirmModulesPurge=false && pnpm --filter ptrack-web exec vite --host 0.0.0.0 --port 7778
+    ports:
+      - "7778:7778"
+    volumes:
+      - .:/workspace
+      - ptrack-node-modules:/workspace/node_modules
+      - ptrack-pnpm-store:/root/.local/share/pnpm/store
+
+volumes:
+  ptrack-node-modules:
+  ptrack-pnpm-store:

@@ -81,7 +81,10 @@ export const useProcessList = (options: UseProcessListOptions = {}): UseProcessL
 
     if (subscribe) {
       socket = client.createWebSocket({ type: 'subscribe', topic: 'processes' });
-      socket.addEventListener('open', () => setConnectionState('open'));
+      socket.addEventListener('open', () => {
+        setConnectionState('open');
+        setError((current) => (current?.message === 'Process list socket failed.' ? undefined : current));
+      });
       socket.addEventListener('close', () => setConnectionState('closed'));
       socket.addEventListener('error', () => {
         setConnectionState('error');

@@ -1,6 +1,19 @@
 # ptrack
 
-`ptrack` is a Go process tracker that wraps CLI commands, keeps a single long-lived daemon running per workspace, and exposes tracked process state over HTTP and WebSocket for both a standalone React UI and a reusable React component library.
+`ptrack` is a process tracker that wraps CLI commands, keeps a single long-lived daemon running per workspace, and exposes tracked process state over HTTP and WebSocket for both a standalone React UI and a reusable React component library.
+
+## Why this is awesome
+
+`ptrack` is especially useful when your code is running inside Docker and you do not want to guess what happened inside the container.
+
+Prefix a command with `ptrack`, start it in your image or Compose setup, and you immediately get:
+
+- a live process entry in the web UI
+- status updates when the process starts, keeps running, or exits
+- buffered output that lets you see exactly what the command printed
+- child-process visibility so parallel work inside the tracked process tree is easier to understand
+
+That means you can launch your app, open the dashboard, and actually watch what is happening instead of jumping between terminals, container logs, and half-finished guesses. When something fails, you can see the output, the final state, and the runtime details in one place. When it works, you get a clean confirmation that the code inside the Docker image really started and stayed alive.
 
 ## What it does
 
@@ -11,7 +24,7 @@
   - REST under `/api/v1/*`
   - WebSocket at `/api/v1/ws`
 - provides:
-  - a daemon web UI in `apps/ptrack-web`
+  - a standalone React dashboard in `apps/ptrack-web`
   - reusable UI components in `packages/ptrack-components`
 
 ## Repository layout
@@ -88,8 +101,8 @@ Run the standalone React dashboard with Vite:
 ```bash
 pnpm --filter ptrack-web dev
 ```
-In development, Vite proxies `/api/*` and `/internal/*` to `PTRACK_HTTP_ADDRESS` when set, otherwise to the active daemon recorded in `.ptrack/daemon.json`, and finally falls back to `127.0.0.1:7777`.
 
+In development, Vite proxies `/api/*` and `/internal/*` to `PTRACK_HTTP_ADDRESS` when set, otherwise to the active daemon recorded in `.ptrack/daemon.json`, and finally falls back to `127.0.0.1:7777`.
 
 Build the shared component library:
 
@@ -150,10 +163,19 @@ Or with Compose:
 docker compose up --build
 ```
 
-The container sets:
+That starts:
+
+- the Go daemon on `http://127.0.0.1:7777`
+- a Vite dev UI on `http://127.0.0.1:7778`
+
+The daemon container sets:
 
 - `PTRACK_HTTP_ADDRESS=0.0.0.0:7777`
 - `PTRACK_WEB_DIR=/app/web`
+
+The Vite container points its API proxy at the daemon service with:
+
+- `PTRACK_HTTP_ADDRESS=http://ptrack:7777`
 
 ## API docs
 
