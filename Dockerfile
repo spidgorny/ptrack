@@ -12,6 +12,7 @@ COPY packages/ptrack-components/package.json packages/ptrack-components/package.
 RUN pnpm install --no-frozen-lockfile
 
 COPY apps ./apps
+COPY docs ./docs
 COPY packages ./packages
 
 RUN pnpm build

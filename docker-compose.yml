@@ -9,6 +9,10 @@ services:
       PTRACK_WEB_DIR: /app/web
     ports:
       - "7777:7777"
+    develop:
+      watch:
+        - action: rebuild
+          path: pnpm-lock.yaml
   ptrack-web-dev:
     image: node:20-alpine
     working_dir: /workspace
@@ -27,6 +31,10 @@ services:
       - .:/workspace
       - ptrack-node-modules:/workspace/node_modules
       - ptrack-pnpm-store:/root/.local/share/pnpm/store
+    develop:
+      watch:
+        - action: rebuild
+          path: pnpm-lock.yaml
 
 volumes:
   ptrack-node-modules:

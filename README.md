@@ -2,6 +2,8 @@
 
 `ptrack` is a process tracker that wraps CLI commands, keeps a single long-lived daemon running per workspace, and exposes tracked process state over HTTP and WebSocket for both a standalone React UI and a reusable React component library.
 
+**Docs:** [API documentation](docs/api.md) · [React component documentation](docs/components.md) · [OpenAPI stub](api/openapi.yaml)
+
 ![Screenshot](screenshot.png)
 
 ## Why this is awesome
@@ -178,6 +180,12 @@ The daemon container sets:
 The Vite container points its API proxy at the daemon service with:
 
 - `PTRACK_HTTP_ADDRESS=http://ptrack:7777`
+
+If you use Compose watch, a change to `pnpm-lock.yaml` will trigger a rebuild for both the daemon image and the Vite dev container:
+
+```bash
+docker compose watch
+```
 
 ## API docs
 
