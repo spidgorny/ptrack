@@ -9,7 +9,12 @@ COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/ptrack-web/package.json apps/ptrack-web/package.json
 COPY packages/ptrack-components/package.json packages/ptrack-components/package.json
 
-RUN pnpm install --no-frozen-lockfile
+RUN --mount=type=secret,id=nscacert,target=/run/secrets/nscacert,required=false \
+    if [ -f /run/secrets/nscacert ]; then \
+      NODE_EXTRA_CA_CERTS=/run/secrets/nscacert pnpm install --no-frozen-lockfile; \
+    else \
+      pnpm install --no-frozen-lockfile; \
+    fi
 
 COPY apps ./apps
 COPY docs ./docs
@@ -29,7 +34,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/ptrack ./cmd/ptrack
 FROM alpine:3.20
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
+RUN --mount=type=secret,id=nscacert,target=/run/secrets/nscacert,required=false \
+    if [ -f /run/secrets/nscacert ]; then \
+      SSL_CERT_FILE=/run/secrets/nscacert apk add --no-cache ca-certificates; \
+    else \
+      apk add --no-cache ca-certificates; \
+    fi
 
 COPY --from=go-build /out/ptrack /app/ptrack
 COPY --from=web-build /src/apps/ptrack-web/dist /app/web

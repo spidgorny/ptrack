@@ -11,6 +11,16 @@ type DaemonInfo struct {
 	WebSocketPath       string    `json:"websocket_path"`
 	TrackedProcessCount int       `json:"tracked_process_count"`
 	RunningProcessCount int       `json:"running_process_count"`
+	Web                 WebUIInfo `json:"web"`
+}
+
+type WebUIInfo struct {
+	Enabled     bool     `json:"enabled"`
+	Source      string   `json:"source,omitempty"`
+	ResolvedDir string   `json:"resolved_dir,omitempty"`
+	IndexHTML   string   `json:"index_html,omitempty"`
+	ViteFiles   []string `json:"vite_files,omitempty"`
+	Reason      string   `json:"reason,omitempty"`
 }
 
 type CPUStats struct {

@@ -26,6 +26,16 @@ export interface DaemonInfo {
   websocket_path: string;
   tracked_process_count: number;
   running_process_count: number;
+  web: WebUiInfo;
+}
+
+export interface WebUiInfo {
+  enabled: boolean;
+  source?: string;
+  resolved_dir?: string;
+  index_html?: string;
+  vite_files?: string[];
+  reason?: string;
 }
 
 export interface ProcessSummary {

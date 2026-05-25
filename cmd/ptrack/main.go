@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"ptrack/internal/api"
 	"ptrack/internal/daemon"
 	"ptrack/internal/daemonctl"
+	"ptrack/internal/model"
 )
 
 func main() {
@@ -114,6 +118,10 @@ func serve(logger *slog.Logger, cwd string) error {
 	if err != nil {
 		return err
 	}
+	webDir, webInfo, err := resolveWebDir(paths.WorkspaceRoot)
+	if err != nil {
+		return err
+	}
 
 	httpAddress := os.Getenv("PTRACK_HTTP_ADDRESS")
 	if httpAddress == "" {
@@ -130,9 +138,10 @@ func serve(logger *slog.Logger, cwd string) error {
 		SocketPath:     paths.SocketPath,
 		HTTPAddress:    listener.Addr().String(),
 		WebSocketPath:  "/api/v1/ws",
+		Web:            webInfo,
 		LogBufferBytes: 64 * 1024,
 	})
-	server := api.NewServer(service, logger)
+	server := api.NewServer(service, logger, api.Config{WebDir: webDir})
 	httpServer := &http.Server{
 		Handler:           server.Mux(),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -159,7 +168,7 @@ func serve(logger *slog.Logger, cwd string) error {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 
-	logger.Info("ptrack daemon serving", "addr", listener.Addr().String(), "runtime_dir", paths.RuntimeDir)
+	logger.Info("ptrack daemon serving", "addr", listener.Addr().String(), "runtime_dir", paths.RuntimeDir, "web_dir", webDir)
 	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -171,6 +180,105 @@ func resolveServePaths(cwd string) (daemonctl.Paths, error) {
 		return daemonctl.PathsFromRuntimeDir(runtimeDir), nil
 	}
 	return daemonctl.ResolvePaths(cwd)
+}
+
+func resolveWebDir(workspaceRoot string) (string, model.WebUIInfo, error) {
+	webDir := os.Getenv("PTRACK_WEB_DIR")
+	if webDir != "" {
+		info, err := inspectWebDir(webDir, "PTRACK_WEB_DIR")
+		if err != nil {
+			return "", model.WebUIInfo{}, err
+		}
+		return info.ResolvedDir, info, nil
+	}
+
+	autoDir := filepath.Join(workspaceRoot, "apps", "ptrack-web", "dist")
+	info, err := inspectWebDir(autoDir, "workspace")
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", model.WebUIInfo{
+				Enabled: false,
+				Source:  "workspace",
+				Reason:  fmt.Sprintf("no built web UI found at %s; run `pnpm build` or set PTRACK_WEB_DIR", autoDir),
+			}, nil
+		}
+		return "", model.WebUIInfo{}, nil
+	}
+	return info.ResolvedDir, info, nil
+}
+
+func inspectWebDir(dir, source string) (model.WebUIInfo, error) {
+	resolvedDir, err := filepath.Abs(dir)
+	if err != nil {
+		return model.WebUIInfo{}, err
+	}
+
+	info, err := os.Stat(resolvedDir)
+	if err != nil {
+		if source == "PTRACK_WEB_DIR" {
+			return model.WebUIInfo{}, fmt.Errorf("stat PTRACK_WEB_DIR: %w", err)
+		}
+		return model.WebUIInfo{}, err
+	}
+	if !info.IsDir() {
+		if source == "PTRACK_WEB_DIR" {
+			return model.WebUIInfo{}, fmt.Errorf("PTRACK_WEB_DIR must point to a directory: %s", resolvedDir)
+		}
+		return model.WebUIInfo{}, fmt.Errorf("%s must point to a directory", resolvedDir)
+	}
+
+	indexPath := filepath.Join(resolvedDir, "index.html")
+	indexInfo, err := os.Stat(indexPath)
+	if err != nil {
+		if source == "PTRACK_WEB_DIR" {
+			return model.WebUIInfo{}, fmt.Errorf("stat PTRACK_WEB_DIR/index.html: %w", err)
+		}
+		return model.WebUIInfo{}, err
+	}
+	if indexInfo.IsDir() {
+		if source == "PTRACK_WEB_DIR" {
+			return model.WebUIInfo{}, fmt.Errorf("PTRACK_WEB_DIR/index.html must be a file: %s", indexPath)
+		}
+		return model.WebUIInfo{}, fmt.Errorf("%s must be a file", indexPath)
+	}
+
+	viteFiles, err := listViteFiles(resolvedDir)
+	if err != nil {
+		return model.WebUIInfo{}, err
+	}
+
+	return model.WebUIInfo{
+		Enabled:     true,
+		Source:      source,
+		ResolvedDir: resolvedDir,
+		IndexHTML:   indexPath,
+		ViteFiles:   viteFiles,
+	}, nil
+}
+
+func listViteFiles(webDir string) ([]string, error) {
+	entries := make([]string, 0, 8)
+	if err := filepath.WalkDir(webDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(webDir, path)
+		if err != nil {
+			return err
+		}
+		if relative == "index.html" {
+			return nil
+		}
+		entries = append(entries, filepath.ToSlash(relative))
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.Strings(entries)
+	return entries, nil
 }
 
 type remoteLogWriter struct {

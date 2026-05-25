@@ -167,19 +167,26 @@ Or with Compose:
 docker compose up --build
 ```
 
-That starts:
+That starts the daemon and serves the built UI from the same origin:
 
-- the Go daemon on `http://127.0.0.1:7777`
-- a Vite dev UI on `http://127.0.0.1:7778`
+- `http://127.0.0.1:7777/` for the SPA
+- `http://127.0.0.1:7777/api/v1/*` for the API
+- `ws://127.0.0.1:7777/api/v1/ws` for live updates
 
 The daemon container sets:
 
 - `PTRACK_HTTP_ADDRESS=0.0.0.0:7777`
 - `PTRACK_WEB_DIR=/app/web`
 
-The Vite container points its API proxy at the daemon service with:
+When you run the daemon directly with `go run cmd/ptrack/main.go`, it will also serve the built UI automatically from `apps/ptrack-web/dist` when that directory exists. If it does not, `GET /api/v1/health` now reports the resolved web directory and discovered Vite output files, or the reason the UI is disabled.
 
-- `PTRACK_HTTP_ADDRESS=http://ptrack:7777`
+For local Vite development, enable the optional Compose profile:
+
+```bash
+docker compose --profile web-dev up --build
+```
+
+That also starts a Vite dev UI on `http://127.0.0.1:7778`, proxying API and WebSocket traffic back to the daemon on `http://ptrack:7777`.
 
 If you use Compose watch, a change to `pnpm-lock.yaml` will trigger a rebuild for both the daemon image and the Vite dev container:
 

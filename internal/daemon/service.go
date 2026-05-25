@@ -20,6 +20,7 @@ type Config struct {
 	SocketPath     string
 	HTTPAddress    string
 	WebSocketPath  string
+	Web            model.WebUIInfo
 	LogBufferBytes int
 }
 
@@ -72,7 +73,7 @@ func NewService(cfg Config) *Service {
 
 	return &Service{
 		cfg:      cfg,
-		store:    tracker.NewStore(time.Now().UTC(), cfg.Version, cfg.SocketPath, cfg.HTTPAddress, cfg.WebSocketPath, cfg.LogBufferBytes),
+		store:    tracker.NewStore(time.Now().UTC(), cfg.Version, cfg.SocketPath, cfg.HTTPAddress, cfg.WebSocketPath, cfg.Web, cfg.LogBufferBytes),
 		runner:   ptrackexec.Runner{},
 		observer: observer.PSSnapshotter{},
 		runtimes: make(map[string]*runtimeHandle),

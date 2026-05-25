@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,14 +24,22 @@ import (
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	service := daemon.NewService(daemon.Config{})
+	service := daemon.NewService(daemon.Config{
+		Web: model.WebUIInfo{
+			Enabled:     true,
+			Source:      "workspace",
+			ResolvedDir: "/tmp/ptrack-web",
+			IndexHTML:   "/tmp/ptrack-web/index.html",
+			ViteFiles:   []string{"assets/index.css", "assets/index.js"},
+		},
+	})
 	if err := service.SeedPrototypeState(t.TempDir()); err != nil {
 		t.Fatalf("seed prototype state: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	recorder := httptest.NewRecorder()
-	NewServer(service, nil).Mux().ServeHTTP(recorder, req)
+	NewServer(service, nil, Config{}).Mux().ServeHTTP(recorder, req)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d", recorder.Code)
@@ -42,6 +52,12 @@ func TestHealthEndpoint(t *testing.T) {
 	if payload.TrackedProcessCount != 2 {
 		t.Fatalf("expected seeded processes, got %d", payload.TrackedProcessCount)
 	}
+	if !payload.Web.Enabled || payload.Web.IndexHTML != "/tmp/ptrack-web/index.html" {
+		t.Fatalf("expected web diagnostics in health payload, got %+v", payload.Web)
+	}
+	if len(payload.Web.ViteFiles) != 2 {
+		t.Fatalf("expected vite files in health payload, got %+v", payload.Web.ViteFiles)
+	}
 }
 
 func TestProcessListAndDetailEndpoints(t *testing.T) {
@@ -50,7 +66,7 @@ func TestProcessListAndDetailEndpoints(t *testing.T) {
 		t.Fatalf("seed prototype state: %v", err)
 	}
 
-	server := NewServer(service, nil)
+	server := NewServer(service, nil, Config{})
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/processes?status=running&limit=10", nil)
 	listRecorder := httptest.NewRecorder()
@@ -89,7 +105,7 @@ func TestLogsAndChildrenEndpoints(t *testing.T) {
 		t.Fatalf("seed prototype state: %v", err)
 	}
 
-	server := NewServer(service, nil)
+	server := NewServer(service, nil, Config{})
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/processes?status=running&limit=10", nil)
 	listRecorder := httptest.NewRecorder()
@@ -142,7 +158,7 @@ func TestWebSocketProcessSubscription(t *testing.T) {
 		_, _ = service.WaitForExit(detail.ID)
 	}()
 
-	httpServer := httptest.NewServer(NewServer(service, nil).Mux())
+	httpServer := httptest.NewServer(NewServer(service, nil, Config{}).Mux())
 	defer httpServer.Close()
 
 	client := newTestWebSocketClient(t, httpServer.URL, "/api/v1/ws")
@@ -183,7 +199,7 @@ func TestWebSocketProcessSubscription(t *testing.T) {
 
 func TestInternalLifecycleEndpoints(t *testing.T) {
 	service := daemon.NewService(daemon.Config{})
-	server := NewServer(service, nil)
+	server := NewServer(service, nil, Config{})
 
 	cmd := exec.Command("sh", "-c", "printf 'bridge\\n'; sleep 0.2")
 	if err := cmd.Start(); err != nil {
@@ -283,6 +299,68 @@ func TestInternalLifecycleEndpoints(t *testing.T) {
 	text := strings.Join(joined, "")
 	if !strings.Contains(text, "singleton daemon") || !strings.Contains(text, "bridge") {
 		t.Fatalf("expected internal logs to be retained, got %q", text)
+	}
+}
+
+func TestServesWebAssetsAndSPAFallback(t *testing.T) {
+	webDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte("<!doctype html><div id=\"root\">ptrack</div>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(webDir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "assets", "app.js"), []byte("console.log('ptrack');"), 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	server := NewServer(daemon.NewService(daemon.Config{}), nil, Config{WebDir: webDir})
+
+	rootReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	rootRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(rootRecorder, rootReq)
+	if rootRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected root status: %d", rootRecorder.Code)
+	}
+	if body := rootRecorder.Body.String(); !strings.Contains(body, "<div id=\"root\">ptrack</div>") {
+		t.Fatalf("expected index body, got %q", body)
+	}
+
+	assetReq := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	assetRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(assetRecorder, assetReq)
+	if assetRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected asset status: %d", assetRecorder.Code)
+	}
+	if body := assetRecorder.Body.String(); !strings.Contains(body, "console.log('ptrack');") {
+		t.Fatalf("expected asset body, got %q", body)
+	}
+
+	routeReq := httptest.NewRequest(http.MethodGet, "/processes/demo", nil)
+	routeRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(routeRecorder, routeReq)
+	if routeRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected route status: %d", routeRecorder.Code)
+	}
+	if body := routeRecorder.Body.String(); !strings.Contains(body, "<div id=\"root\">ptrack</div>") {
+		t.Fatalf("expected SPA fallback body, got %q", body)
+	}
+
+	missingAssetReq := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)
+	missingAssetRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(missingAssetRecorder, missingAssetReq)
+	if missingAssetRecorder.Code != http.StatusNotFound {
+		t.Fatalf("unexpected missing asset status: %d", missingAssetRecorder.Code)
+	}
+
+	apiReq := httptest.NewRequest(http.MethodGet, "/api/v1/missing", nil)
+	apiRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(apiRecorder, apiReq)
+	if apiRecorder.Code != http.StatusNotFound {
+		t.Fatalf("unexpected reserved path status: %d", apiRecorder.Code)
+	}
+	if body := apiRecorder.Body.String(); strings.Contains(body, "<div id=\"root\">ptrack</div>") {
+		t.Fatalf("expected API path to skip SPA fallback, got %q", body)
 	}
 }
 

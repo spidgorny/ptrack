@@ -5,22 +5,32 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
+	"path"
 	"strconv"
+	"strings"
 
 	"ptrack/internal/daemon"
 	"ptrack/internal/daemonctl"
 	"ptrack/internal/model"
 )
 
+type Config struct {
+	WebDir string
+}
+
 type Server struct {
 	service *daemon.Service
 	logger  *slog.Logger
 	mux     *http.ServeMux
+	webFS   fs.FS
+	web     http.Handler
 }
 
-func NewServer(service *daemon.Service, logger *slog.Logger) *Server {
+func NewServer(service *daemon.Service, logger *slog.Logger, cfg Config) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -30,12 +40,16 @@ func NewServer(service *daemon.Service, logger *slog.Logger) *Server {
 		logger:  logger,
 		mux:     http.NewServeMux(),
 	}
+	if cfg.WebDir != "" {
+		server.webFS = os.DirFS(cfg.WebDir)
+		server.web = http.FileServerFS(server.webFS)
+	}
 	server.routes()
 	return server
 }
 
-func NewMux(service *daemon.Service, logger *slog.Logger) *http.ServeMux {
-	return NewServer(service, logger).Mux()
+func NewMux(service *daemon.Service, logger *slog.Logger, cfg Config) *http.ServeMux {
+	return NewServer(service, logger, cfg).Mux()
 }
 
 func (s *Server) Mux() *http.ServeMux {
@@ -52,6 +66,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /internal/processes", s.handleInternalRegister)
 	s.mux.HandleFunc("POST /internal/processes/{id}/logs", s.handleInternalLogAppend)
 	s.mux.HandleFunc("POST /internal/processes/{id}/complete", s.handleInternalComplete)
+	if s.web != nil {
+		s.mux.Handle("GET /", http.HandlerFunc(s.handleWeb))
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +135,41 @@ func (s *Server) handleProcessChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
+	requestPath := path.Clean("/" + r.URL.Path)
+	if isReservedPath(requestPath) {
+		http.NotFound(w, r)
+		return
+	}
+
+	assetPath := strings.TrimPrefix(requestPath, "/")
+	if assetPath == "" {
+		s.serveWebFile(w, r, "/index.html")
+		return
+	}
+
+	info, err := fs.Stat(s.webFS, assetPath)
+	switch {
+	case err == nil && !info.IsDir():
+		s.web.ServeHTTP(w, r)
+		return
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		s.logger.Error("stat web asset", "path", assetPath, "err", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if path.Ext(assetPath) != "" {
+		http.NotFound(w, r)
+		return
+	}
+	s.serveWebFile(w, r, "/index.html")
+}
+
+func (s *Server) serveWebFile(w http.ResponseWriter, r *http.Request, requestPath string) {
+	http.ServeFileFS(w, r, s.webFS, strings.TrimPrefix(requestPath, "/"))
 }
 
 func (s *Server) writeProcessError(w http.ResponseWriter, err error) {
@@ -205,6 +257,13 @@ func parseBoundedInt64(r *http.Request, key string, defaultValue, minValue int64
 		return 0, fmt.Errorf("%s must be greater than or equal to %d", key, minValue)
 	}
 	return value, nil
+}
+
+func isReservedPath(requestPath string) bool {
+	return requestPath == "/api" ||
+		strings.HasPrefix(requestPath, "/api/") ||
+		requestPath == "/internal" ||
+		strings.HasPrefix(requestPath, "/internal/")
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

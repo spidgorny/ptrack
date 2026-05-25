@@ -59,6 +59,7 @@ type Store struct {
 	socketPath       string
 	httpAddress      string
 	websocketPath    string
+	web              model.WebUIInfo
 	logBufferBytes   int
 	nextID           int64
 	nextPID          int
@@ -68,7 +69,7 @@ type Store struct {
 	subscribers      map[int64]chan model.EventEnvelope
 }
 
-func NewStore(startedAt time.Time, version, socketPath, httpAddress, websocketPath string, logBufferBytes int) *Store {
+func NewStore(startedAt time.Time, version, socketPath, httpAddress, websocketPath string, web model.WebUIInfo, logBufferBytes int) *Store {
 	if websocketPath == "" {
 		websocketPath = "/api/v1/ws"
 	}
@@ -81,6 +82,7 @@ func NewStore(startedAt time.Time, version, socketPath, httpAddress, websocketPa
 		socketPath:     socketPath,
 		httpAddress:    httpAddress,
 		websocketPath:  websocketPath,
+		web:            web,
 		logBufferBytes: logBufferBytes,
 		nextPID:        18000,
 		order:          make([]string, 0, 16),
@@ -291,6 +293,7 @@ func (s *Store) DaemonInfo(now time.Time) model.DaemonInfo {
 		WebSocketPath:       s.websocketPath,
 		TrackedProcessCount: tracked,
 		RunningProcessCount: running,
+		Web:                 s.web,
 	}
 }
 

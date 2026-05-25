@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      secrets:
+        - nscacert
     command: ["serve"]
     environment:
       PTRACK_HTTP_ADDRESS: 0.0.0.0:7777
@@ -14,12 +16,15 @@ services:
         - action: rebuild
           path: pnpm-lock.yaml
   ptrack-web-dev:
+    profiles:
+      - web-dev
     image: node:20-alpine
     working_dir: /workspace
     depends_on:
       - ptrack
     environment:
       CI: "true"
+      NODE_EXTRA_CA_CERTS: /run/secrets/nscacert
       PTRACK_HTTP_ADDRESS: http://ptrack:7777
     command:
       - sh
@@ -31,6 +36,8 @@ services:
       - .:/workspace
       - ptrack-node-modules:/workspace/node_modules
       - ptrack-pnpm-store:/root/.local/share/pnpm/store
+    secrets:
+      - nscacert
     develop:
       watch:
         - action: rebuild
@@ -39,3 +46,7 @@ services:
 volumes:
   ptrack-node-modules:
   ptrack-pnpm-store:
+
+secrets:
+  nscacert:
+    file: ${NSCACERT_PATH:-/Users/Shared/nscacert.pem}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -127,4 +128,50 @@ func cleanupDaemon(t *testing.T, paths daemonctl.Paths) {
 		}
 	}
 	_ = paths.RemoveState(state.PID)
+}
+
+func TestResolveWebDirUsesWorkspaceBuildOutput(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	webDir := filepath.Join(workspaceRoot, "apps", "ptrack-web", "dist")
+	if err := os.MkdirAll(filepath.Join(webDir, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir web assets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "assets", "index.js"), []byte("console.log('ptrack');"), 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	resolvedDir, info, err := resolveWebDir(workspaceRoot)
+	if err != nil {
+		t.Fatalf("resolve web dir: %v", err)
+	}
+	if resolvedDir != webDir {
+		t.Fatalf("expected resolved dir %q, got %q", webDir, resolvedDir)
+	}
+	if !info.Enabled || info.Source != "workspace" {
+		t.Fatalf("expected enabled workspace web info, got %+v", info)
+	}
+	if len(info.ViteFiles) != 1 || info.ViteFiles[0] != "assets/index.js" {
+		t.Fatalf("expected vite files, got %+v", info.ViteFiles)
+	}
+}
+
+func TestResolveWebDirReportsMissingWorkspaceBuild(t *testing.T) {
+	workspaceRoot := t.TempDir()
+
+	resolvedDir, info, err := resolveWebDir(workspaceRoot)
+	if err != nil {
+		t.Fatalf("resolve web dir: %v", err)
+	}
+	if resolvedDir != "" {
+		t.Fatalf("expected no resolved dir, got %q", resolvedDir)
+	}
+	if info.Enabled {
+		t.Fatalf("expected disabled web info, got %+v", info)
+	}
+	if !strings.Contains(info.Reason, "pnpm build") {
+		t.Fatalf("expected build hint in reason, got %q", info.Reason)
+	}
 }
