@@ -336,6 +336,16 @@ func TestServesWebAssetsAndSPAFallback(t *testing.T) {
 		t.Fatalf("expected asset body, got %q", body)
 	}
 
+	prefixedAssetReq := httptest.NewRequest(http.MethodGet, "/nested/assets/app.js", nil)
+	prefixedAssetRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(prefixedAssetRecorder, prefixedAssetReq)
+	if prefixedAssetRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected prefixed asset status: %d", prefixedAssetRecorder.Code)
+	}
+	if body := prefixedAssetRecorder.Body.String(); !strings.Contains(body, "console.log('ptrack');") {
+		t.Fatalf("expected prefixed asset body, got %q", body)
+	}
+
 	routeReq := httptest.NewRequest(http.MethodGet, "/processes/demo", nil)
 	routeRecorder := httptest.NewRecorder()
 	server.Mux().ServeHTTP(routeRecorder, routeReq)
@@ -361,6 +371,13 @@ func TestServesWebAssetsAndSPAFallback(t *testing.T) {
 	}
 	if body := apiRecorder.Body.String(); strings.Contains(body, "<div id=\"root\">ptrack</div>") {
 		t.Fatalf("expected API path to skip SPA fallback, got %q", body)
+	}
+
+	prefixedAPIReq := httptest.NewRequest(http.MethodGet, "/nested/api/v1/health", nil)
+	prefixedAPIRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(prefixedAPIRecorder, prefixedAPIReq)
+	if prefixedAPIRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected prefixed api status: %d", prefixedAPIRecorder.Code)
 	}
 }
 

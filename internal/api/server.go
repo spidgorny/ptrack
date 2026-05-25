@@ -26,6 +26,7 @@ type Server struct {
 	service *daemon.Service
 	logger  *slog.Logger
 	mux     *http.ServeMux
+	handler http.Handler
 	webFS   fs.FS
 	web     http.Handler
 }
@@ -45,15 +46,16 @@ func NewServer(service *daemon.Service, logger *slog.Logger, cfg Config) *Server
 		server.web = http.FileServerFS(server.webFS)
 	}
 	server.routes()
+	server.handler = http.HandlerFunc(server.serveHTTP)
 	return server
 }
 
-func NewMux(service *daemon.Service, logger *slog.Logger, cfg Config) *http.ServeMux {
+func NewMux(service *daemon.Service, logger *slog.Logger, cfg Config) http.Handler {
 	return NewServer(service, logger, cfg).Mux()
 }
 
-func (s *Server) Mux() *http.ServeMux {
-	return s.mux
+func (s *Server) Mux() http.Handler {
+	return s.handler
 }
 
 func (s *Server) routes() {
@@ -69,6 +71,10 @@ func (s *Server) routes() {
 	if s.web != nil {
 		s.mux.Handle("GET /", http.HandlerFunc(s.handleWeb))
 	}
+}
+
+func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, s.normalizeRequest(r))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -144,24 +150,21 @@ func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assetPath := strings.TrimPrefix(requestPath, "/")
-	if assetPath == "" {
-		s.serveWebFile(w, r, "/index.html")
-		return
-	}
-
-	info, err := fs.Stat(s.webFS, assetPath)
-	switch {
-	case err == nil && !info.IsDir():
-		s.web.ServeHTTP(w, r)
-		return
-	case err != nil && !errors.Is(err, fs.ErrNotExist):
-		s.logger.Error("stat web asset", "path", assetPath, "err", err)
+	assetPath, found, err := s.resolveWebPath(requestPath)
+	if err != nil {
+		s.logger.Error("stat web asset", "path", requestPath, "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-
-	if path.Ext(assetPath) != "" {
+	if assetPath == "index.html" {
+		s.serveWebFile(w, r, "/index.html")
+		return
+	}
+	if found {
+		s.serveWebFile(w, r, "/"+assetPath)
+		return
+	}
+	if path.Ext(strings.TrimPrefix(requestPath, "/")) != "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -264,6 +267,74 @@ func isReservedPath(requestPath string) bool {
 		strings.HasPrefix(requestPath, "/api/") ||
 		requestPath == "/internal" ||
 		strings.HasPrefix(requestPath, "/internal/")
+}
+
+func (s *Server) normalizeRequest(r *http.Request) *http.Request {
+	normalizedPath := normalizeReservedPath(path.Clean("/" + r.URL.Path))
+	if normalizedPath == r.URL.Path {
+		return r
+	}
+
+	clone := r.Clone(r.Context())
+	cloneURL := *clone.URL
+	clone.URL = &cloneURL
+	clone.URL.Path = normalizedPath
+	clone.RequestURI = normalizedPath
+	return clone
+}
+
+func normalizeReservedPath(requestPath string) string {
+	for _, marker := range []string{"/api/", "/internal/"} {
+		if idx := strings.Index(requestPath, marker); idx > 0 {
+			return requestPath[idx:]
+		}
+	}
+	for _, marker := range []string{"/api", "/internal"} {
+		if strings.HasSuffix(requestPath, marker) && len(requestPath) > len(marker) {
+			return marker
+		}
+	}
+	return requestPath
+}
+
+func (s *Server) resolveWebPath(requestPath string) (string, bool, error) {
+	if s.webFS == nil {
+		return "", false, nil
+	}
+
+	trimmedPath := strings.TrimPrefix(requestPath, "/")
+	if trimmedPath == "" {
+		return "index.html", true, nil
+	}
+
+	for _, candidate := range suffixCandidates(trimmedPath) {
+		info, err := fs.Stat(s.webFS, candidate)
+		switch {
+		case err == nil && !info.IsDir():
+			return candidate, true, nil
+		case err == nil:
+			continue
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		default:
+			return "", false, err
+		}
+	}
+
+	return "", false, nil
+}
+
+func suffixCandidates(requestPath string) []string {
+	candidates := []string{requestPath}
+	for trimmed := requestPath; ; {
+		slash := strings.Index(trimmed, "/")
+		if slash < 0 {
+			break
+		}
+		trimmed = trimmed[slash+1:]
+		candidates = append(candidates, trimmed)
+	}
+	return candidates
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

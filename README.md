@@ -180,6 +180,8 @@ The daemon container sets:
 
 When you run the daemon directly with `go run cmd/ptrack/main.go`, it will also serve the built UI automatically from `apps/ptrack-web/dist` when that directory exists. If it does not, `GET /api/v1/health` now reports the resolved web directory and discovered Vite output files, or the reason the UI is disabled.
 
+The built web UI now uses relative asset, API, and WebSocket URLs so it can sit behind a subfolder-style prefix without extra base-path configuration. The daemon also accepts prefixed requests like `/tools/ptrack/assets/...` and `/tools/ptrack/api/v1/...` when a reverse proxy preserves that prefix.
+
 For local Vite development, enable the optional Compose profile:
 
 ```bash

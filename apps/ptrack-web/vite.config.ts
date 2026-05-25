@@ -43,6 +43,7 @@ export default defineConfig(() => {
   const daemonTarget = resolveDaemonTarget();
 
   return {
+    base: './',
     plugins: [react()],
     server: {
       port: 4173,

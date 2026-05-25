@@ -40,6 +40,9 @@ export class PtrackApiError extends Error {
 const isBrowser = () => typeof window !== 'undefined';
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 const coerceHttpBaseUrl = (value: string) => (/^https?:\/\//.test(value) ? value : `http://${value}`);
+const ensureTrailingSlash = (value: string) => (value.endsWith('/') ? value : `${value}/`);
+
+const resolveBrowserBaseUrl = () => normalizeBaseUrl(new URL('.', ensureTrailingSlash(window.location.href)).toString());
 
 export const safeParseServerMessage = (raw: string): PtrackServerMessage | null => {
   try {
@@ -62,7 +65,7 @@ export class PtrackApiClient {
     }
 
     if (isBrowser()) {
-      return window.location.origin;
+      return resolveBrowserBaseUrl();
     }
 
     return FALLBACK_BASE_URL;
@@ -73,9 +76,9 @@ export class PtrackApiClient {
       return this.options.wsUrl;
     }
 
-    const baseUrl = new URL(this.resolveBaseUrl());
+    const baseUrl = new URL(ensureTrailingSlash(this.resolveBaseUrl()));
     baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    baseUrl.pathname = '/api/v1/ws';
+    baseUrl.pathname = `${baseUrl.pathname.replace(/\/+$/, '/') }api/v1/ws`;
     baseUrl.search = '';
     baseUrl.hash = '';
     return baseUrl.toString();
@@ -98,7 +101,7 @@ export class PtrackApiClient {
   }
 
   private buildUrl(pathname: string, params?: Record<string, string | number | undefined>) {
-    const url = new URL(pathname, `${this.resolveBaseUrl()}/`);
+    const url = new URL(pathname.replace(/^\/+/, ''), ensureTrailingSlash(this.resolveBaseUrl()));
 
     Object.entries(params ?? {}).forEach(([key, value]) => {
       if (value !== undefined && value !== '') {
@@ -131,11 +134,11 @@ export class PtrackApiClient {
   }
 
   async getHealth() {
-    return this.request<DaemonInfo>('/api/v1/health');
+    return this.request<DaemonInfo>('api/v1/health');
   }
 
   async listProcesses(params: ProcessListParams = {}) {
-    return this.request<ProcessListResponse>('/api/v1/processes', {
+    return this.request<ProcessListResponse>('api/v1/processes', {
       status: params.status,
       limit: params.limit,
       cursor: params.cursor,
@@ -143,11 +146,11 @@ export class PtrackApiClient {
   }
 
   async getProcessDetail(id: string) {
-    return this.request<ProcessDetail>(`/api/v1/processes/${encodeURIComponent(id)}`);
+    return this.request<ProcessDetail>(`api/v1/processes/${encodeURIComponent(id)}`);
   }
 
   async getProcessLogs(id: string, params: ProcessLogsParams = {}) {
-    return this.request<ProcessLogsResponse>(`/api/v1/processes/${encodeURIComponent(id)}/logs`, {
+    return this.request<ProcessLogsResponse>(`api/v1/processes/${encodeURIComponent(id)}/logs`, {
       after: params.after,
       limit: params.limit,
     });
@@ -155,7 +158,7 @@ export class PtrackApiClient {
 
   async getProcessChildren(id: string) {
     return this.request<ProcessChildrenResponse | ProcessChildrenResponse['items']>(
-      `/api/v1/processes/${encodeURIComponent(id)}/children`,
+      `api/v1/processes/${encodeURIComponent(id)}/children`,
     );
   }
 
