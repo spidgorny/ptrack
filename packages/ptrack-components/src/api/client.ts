@@ -42,7 +42,11 @@ const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 const coerceHttpBaseUrl = (value: string) => (/^https?:\/\//.test(value) ? value : `http://${value}`);
 const ensureTrailingSlash = (value: string) => (value.endsWith('/') ? value : `${value}/`);
 
-const resolveBrowserBaseUrl = () => normalizeBaseUrl(new URL('.', ensureTrailingSlash(window.location.href)).toString());
+const resolveBrowserBaseUrl = () => {
+  const documentBaseUrl = typeof document !== 'undefined' ? document.baseURI : undefined;
+  const baseReference = documentBaseUrl && documentBaseUrl !== 'about:blank' ? documentBaseUrl : window.location.href;
+  return normalizeBaseUrl(new URL('.', ensureTrailingSlash(baseReference)).toString());
+};
 
 export const safeParseServerMessage = (raw: string): PtrackServerMessage | null => {
   try {

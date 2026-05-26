@@ -304,7 +304,8 @@ func TestInternalLifecycleEndpoints(t *testing.T) {
 
 func TestServesWebAssetsAndSPAFallback(t *testing.T) {
 	webDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte("<!doctype html><div id=\"root\">ptrack</div>"), 0o644); err != nil {
+	indexHTML := "<!doctype html><html><head><title>ptrack</title></head><body><div id=\"root\">ptrack</div></body></html>"
+	if err := os.WriteFile(filepath.Join(webDir, "index.html"), []byte(indexHTML), 0o644); err != nil {
 		t.Fatalf("write index: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(webDir, "assets"), 0o755); err != nil {
@@ -324,6 +325,8 @@ func TestServesWebAssetsAndSPAFallback(t *testing.T) {
 	}
 	if body := rootRecorder.Body.String(); !strings.Contains(body, "<div id=\"root\">ptrack</div>") {
 		t.Fatalf("expected index body, got %q", body)
+	} else if !strings.Contains(body, "<base href=\"/\">") {
+		t.Fatalf("expected root base href, got %q", body)
 	}
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
@@ -346,6 +349,16 @@ func TestServesWebAssetsAndSPAFallback(t *testing.T) {
 		t.Fatalf("expected prefixed asset body, got %q", body)
 	}
 
+	subfolderReq := httptest.NewRequest(http.MethodGet, "/ptrack", nil)
+	subfolderRecorder := httptest.NewRecorder()
+	server.Mux().ServeHTTP(subfolderRecorder, subfolderReq)
+	if subfolderRecorder.Code != http.StatusOK {
+		t.Fatalf("unexpected subfolder status: %d", subfolderRecorder.Code)
+	}
+	if body := subfolderRecorder.Body.String(); !strings.Contains(body, "<base href=\"/ptrack/\">") {
+		t.Fatalf("expected subfolder base href, got %q", body)
+	}
+
 	routeReq := httptest.NewRequest(http.MethodGet, "/processes/demo", nil)
 	routeRecorder := httptest.NewRecorder()
 	server.Mux().ServeHTTP(routeRecorder, routeReq)
@@ -354,6 +367,8 @@ func TestServesWebAssetsAndSPAFallback(t *testing.T) {
 	}
 	if body := routeRecorder.Body.String(); !strings.Contains(body, "<div id=\"root\">ptrack</div>") {
 		t.Fatalf("expected SPA fallback body, got %q", body)
+	} else if !strings.Contains(body, "<base href=\"/processes/demo/\">") {
+		t.Fatalf("expected route base href, got %q", body)
 	}
 
 	missingAssetReq := httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -157,7 +158,7 @@ func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if assetPath == "index.html" {
-		s.serveWebFile(w, r, "/index.html")
+		s.serveIndexHTML(w, r, requestPath)
 		return
 	}
 	if found {
@@ -168,11 +169,23 @@ func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.serveWebFile(w, r, "/index.html")
+	s.serveIndexHTML(w, r, requestPath)
 }
 
 func (s *Server) serveWebFile(w http.ResponseWriter, r *http.Request, requestPath string) {
 	http.ServeFileFS(w, r, s.webFS, strings.TrimPrefix(requestPath, "/"))
+}
+
+func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request, requestPath string) {
+	indexHTML, err := fs.ReadFile(s.webFS, "index.html")
+	if err != nil {
+		s.logger.Error("read index html", "path", requestPath, "err", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, injectBaseHref(string(indexHTML), webBaseHref(requestPath)))
 }
 
 func (s *Server) writeProcessError(w http.ResponseWriter, err error) {
@@ -335,6 +348,33 @@ func suffixCandidates(requestPath string) []string {
 		candidates = append(candidates, trimmed)
 	}
 	return candidates
+}
+
+func webBaseHref(requestPath string) string {
+	cleanedPath := path.Clean("/" + requestPath)
+	if cleanedPath == "/" || cleanedPath == "/index.html" {
+		return "/"
+	}
+	if strings.HasSuffix(cleanedPath, "/index.html") {
+		cleanedPath = path.Dir(cleanedPath)
+	}
+	return strings.TrimSuffix(cleanedPath, "/") + "/"
+}
+
+func injectBaseHref(indexHTML, baseHref string) string {
+	lowerHTML := strings.ToLower(indexHTML)
+	if strings.Contains(lowerHTML, "<base ") {
+		return indexHTML
+	}
+
+	headIndex := strings.Index(lowerHTML, "<head>")
+	if headIndex < 0 {
+		return indexHTML
+	}
+
+	insertAt := headIndex + len("<head>")
+	baseTag := "\n    <base href=\"" + html.EscapeString(baseHref) + "\">"
+	return indexHTML[:insertAt] + baseTag + indexHTML[insertAt:]
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
