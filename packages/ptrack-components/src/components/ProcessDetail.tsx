@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import type { ChildProcess, LogEntry, ProcessDetail as ProcessDetailModel } from '../types/api';
 import { PrototypeNotice } from './PrototypeNotice';
 import { StatusBadge } from './StatusBadge';
@@ -25,7 +25,6 @@ const panelStyle: CSSProperties = {
 
 const preStyle: CSSProperties = {
   margin: 0,
-  maxHeight: '24rem',
   overflow: 'auto',
   padding: '1rem',
   borderRadius: 16,
@@ -33,14 +32,19 @@ const preStyle: CSSProperties = {
   color: '#d6e3f0',
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: '0.85rem',
-  whiteSpace: 'pre-wrap',
+  whiteSpace: 'break-spaces',
+  minHeight: 0,
 };
 
 const terminalStyle: CSSProperties = {
   ...preStyle,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.45rem',
   background: '#000000',
   color: '#f8fafc',
   lineHeight: 1.45,
+  flex: 1,
 };
 
 const labelStyle: CSSProperties = {
@@ -63,21 +67,41 @@ const EmptyState = () => (
   </div>
 );
 
-const logStreamColor = (stream: LogEntry['stream']) => {
+const logStreamTone = (stream: LogEntry['stream']): CSSProperties => {
   switch (stream) {
     case 'stderr':
-      return '#f87171';
+      return {
+        color: '#fecaca',
+        borderLeft: '3px solid rgba(248, 113, 113, 0.65)',
+        background: 'rgba(127, 29, 29, 0.18)',
+      };
     case 'stdout':
+      return {
+        color: '#d6e3f0',
+        borderLeft: '3px solid rgba(96, 165, 250, 0.55)',
+        background: 'rgba(30, 64, 175, 0.12)',
+      };
     case 'pty':
+      return {
+        color: '#bfdbfe',
+        borderLeft: '3px solid rgba(34, 197, 94, 0.6)',
+        background: 'rgba(20, 83, 45, 0.18)',
+      };
     default:
-      return '#f8fafc';
+      return { color: '#f8fafc' };
   }
 };
 
 const renderLogEntry = (entry: LogEntry) => (
-  <div key={entry.seq} style={{ color: logStreamColor(entry.stream) }}>
-    <span style={{ color: '#94a3b8' }}>{`[${entry.seq}] ${entry.timestamp} ${entry.stream}`}</span>
-    {`\n${entry.text}`}
+  <div
+    key={entry.seq}
+    style={{
+      ...logStreamTone(entry.stream),
+      padding: '0.45rem 0.7rem',
+      borderRadius: 12,
+    }}
+  >
+    {entry.text}
   </div>
 );
 
@@ -108,6 +132,18 @@ export const ProcessDetail = ({
   connectionState,
   onRetry,
 }: ProcessDetailProps) => {
+  const logViewportRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    const viewport = logViewportRef.current;
+    if (!viewport || !stickToBottomRef.current) {
+      return;
+    }
+
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [logs]);
+
   if (!detail && !isLoading && !error) {
     return <EmptyState />;
   }
@@ -174,7 +210,7 @@ export const ProcessDetail = ({
             <pre style={{ ...preStyle, marginTop: '0.75rem', maxHeight: '10rem' }}>{formatCommand(detail.argv)}</pre>
           </section>
 
-          <section style={{ ...panelStyle, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <section style={{ ...panelStyle, minHeight: 0, display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
               <div>
                 <div style={labelStyle}>Buffered logs</div>
@@ -199,7 +235,17 @@ export const ProcessDetail = ({
                 </button>
               ) : null}
             </div>
-            <div role="log" aria-live="polite" style={{ ...terminalStyle, marginTop: '0.9rem', flex: 1 }}>
+            <div
+              ref={logViewportRef}
+              role="log"
+              aria-live="polite"
+              onScroll={(event) => {
+                const viewport = event.currentTarget;
+                const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+                stickToBottomRef.current = distanceFromBottom < 24;
+              }}
+              style={{ ...terminalStyle, marginTop: '0.9rem' }}
+            >
               {logs.length > 0 ? logs.map(renderLogEntry) : 'No log data has been buffered yet.'}
             </div>
           </section>
